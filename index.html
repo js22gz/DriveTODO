@@ -289,6 +289,8 @@ let fileSearchTerm = '';
 
 // Google API state
 let gapiLoaded = false;
+let gisLoaded = false;
+let tokenClient = null;
 let isSignedIn = false;
 let accessToken = null;
 let pickerApiLoaded = false;
@@ -393,36 +395,53 @@ function stringify() {
 
 // ==================== GOOGLE DRIVE API ====================
 async function loadGoogleAPIs() {
-    if (gapiLoaded) return true;
+    if (gapiLoaded && gisLoaded) return true;
 
-    return new Promise((resolve, reject) => {
-        const script = document.createElement('script');
-        script.src = 'https://apis.google.com/js/api.js';
-        script.onload = async () => {
-            try {
-                await new Promise(r => gapi.load('client:auth2', r));
-                
-                await gapi.client.init({
-                    apiKey: GOOGLE_API_KEY,
-                    clientId: GOOGLE_CLIENT_ID,
+    // Load gapi client + Picker (no auth2)
+    if (!gapiLoaded) {
+        await new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = 'https://apis.google.com/js/api.js';
+            script.onload = async () => {
+                try {
+                    await new Promise(r => gapi.load('client:picker', r));
+                    await gapi.client.init({
+                        apiKey: GOOGLE_API_KEY,
+                        discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest']
+                    });
+                    pickerApiLoaded = true;
+                    gapiLoaded = true;
+                    resolve(true);
+                } catch (err) {
+                    console.error('Google API init failed', err);
+                    reject(err);
+                }
+            };
+            script.onerror = () => reject(new Error('Failed to load Google APIs'));
+            document.head.appendChild(script);
+        });
+    }
+
+    // Load Google Identity Services (replaces deprecated gapi.auth2)
+    if (!gisLoaded) {
+        await new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = 'https://accounts.google.com/gsi/client';
+            script.onload = () => {
+                tokenClient = google.accounts.oauth2.initTokenClient({
+                    client_id: GOOGLE_CLIENT_ID,
                     scope: SCOPES,
-                    discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest']
+                    callback: '', // set per request in handleAuthClick
                 });
-                
-                // Load Picker API
-                await new Promise(r => gapi.load('picker', r));
-                pickerApiLoaded = true;
-                
-                gapiLoaded = true;
+                gisLoaded = true;
                 resolve(true);
-            } catch (err) {
-                console.error('Google API init failed', err);
-                reject(err);
-            }
-        };
-        script.onerror = () => reject(new Error('Failed to load Google APIs'));
-        document.head.appendChild(script);
-    });
+            };
+            script.onerror = () => reject(new Error('Failed to load Google Identity Services'));
+            document.head.appendChild(script);
+        });
+    }
+
+    return true;
 }
 
 function updateDriveStatus(connected, email = '') {
@@ -453,17 +472,30 @@ async function handleAuthClick() {
     try {
         await loadGoogleAPIs();
         
-        const authInstance = gapi.auth2.getAuthInstance();
-        
-        if (!authInstance.isSignedIn.get()) {
-            await authInstance.signIn();
-        }
-        
-        const user = authInstance.currentUser.get();
-        accessToken = user.getAuthResponse().access_token;
-        
-        const profile = user.getBasicProfile();
-        const email = profile.getEmail();
+        // Use GIS token client (replaces deprecated gapi.auth2)
+        const tokenResponse = await new Promise((resolve, reject) => {
+            tokenClient.callback = (response) => {
+                if (response.error) {
+                    reject(response);
+                } else {
+                    resolve(response);
+                }
+            };
+            tokenClient.requestAccessToken({ prompt: '' });
+        });
+
+        accessToken = tokenResponse.access_token;
+        gapi.client.setToken({ access_token: accessToken });
+
+        // Fetch the signed-in user's email via tokeninfo
+        let email = '';
+        try {
+            const resp = await fetch(
+                `https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=${encodeURIComponent(accessToken)}`
+            );
+            const info = await resp.json();
+            email = info.email || '';
+        } catch (e) {}
         
         updateDriveStatus(true, email);
         showToast('Connected to Google Drive!');
@@ -491,10 +523,12 @@ async function handleAuthClick() {
 }
 
 async function signOut() {
-    if (!gapiLoaded) return;
+    if (!gisLoaded) return;
     try {
-        const authInstance = gapi.auth2.getAuthInstance();
-        await authInstance.signOut();
+        if (accessToken) {
+            google.accounts.oauth2.revoke(accessToken, () => {});
+        }
+        gapi.client.setToken(null);
         accessToken = null;
         isSignedIn = false;
         currentDriveFileId = null;
