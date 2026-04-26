@@ -18,10 +18,11 @@
             --text-dim: #71717a;
             --accent-subtle: #52525b;
             --accent-green: #4ade80;
+            --header-height: 44px;
         }
         * { box-sizing: border-box; margin:0; padding:0; }
         body { background: var(--bg-base); color: var(--text-primary); font-family: system-ui, -apple-system, sans-serif; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
-        header { height: 44px; background: var(--bg-surface); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; padding: 0 16px; justify-content: space-between; flex-shrink: 0; font-weight: 700; font-size: 15px; letter-spacing: -0.3px; }
+        header { height: var(--header-height); background: var(--bg-surface); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; padding: 0 16px; justify-content: space-between; flex-shrink: 0; font-weight: 700; font-size: 15px; letter-spacing: -0.3px; }
         .header-toggle { background: none; border: 1px solid var(--border-color); color: var(--text-secondary); padding: 4px 10px; border-radius: 3px; font-size: 13px; cursor: pointer; transition: all 0.1s; font-weight: 500; }
         .header-toggle:hover { background: var(--bg-active); color: var(--text-primary); }
         .header-toggle.active { background: var(--bg-active); color: var(--text-primary); border-color: var(--text-secondary); }
@@ -39,36 +40,30 @@
             overflow: hidden;
         }
         .sidebar-header {
-            padding: 14px 16px 12px;
+            padding: 12px 14px;
             border-bottom: 1px solid var(--border-color);
             display: flex;
-            align-items: flex-start;
+            flex-direction: column;
             gap: 10px;
+        }
+        .sidebar-header-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
             justify-content: space-between;
         }
         .root-info { flex: 1; min-width: 0; }
         .root-label { font-size: 10px; color: var(--text-dim); font-weight: 500; letter-spacing: 0.5px; }
         .root-name { font-size: 14px; font-weight: 600; color: var(--text-strong); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .file-list { flex: 1; overflow-y: auto; padding: 6px 8px; }
-        .file-item {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 8px 10px;
-            border-radius: 4px;
-            cursor: pointer;
-            margin-bottom: 1px;
-            transition: background 0.1s;
-        }
+        .file-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 4px; cursor: pointer; margin-bottom: 1px; transition: background 0.1s; }
         .file-item:hover { background: var(--bg-active); }
         .file-item.active { background: var(--bg-active); box-shadow: inset 0 0 0 1px var(--text-secondary); }
-        .file-icon { font-size: 15px; flex-shrink: 0; }
         .file-name { flex: 1; font-size: 13.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
         .file-meta { font-size: 10.5px; color: var(--text-dim); white-space: nowrap; font-feature-settings: "tnum"; }
         .file-delete { background: none; border: none; color: var(--text-dim); font-size: 15px; cursor: pointer; padding: 2px 5px; opacity: 0.6; transition: opacity 0.1s; }
         .file-item:hover .file-delete { opacity: 1; }
         .file-delete:hover { color: #f87171; }
-        .sidebar-footer { padding: 12px 16px; border-top: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 8px; }
         
         .lists { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-wrap: wrap; gap: 16px; align-content: flex-start; background: var(--bg-base); }
         .list {
@@ -199,6 +194,9 @@
         .btn-google svg { width: 16px; height: 16px; }
         .loading { opacity: 0.6; pointer-events: none; }
         .file-item .sync-dot { width: 6px; height: 6px; background: var(--accent-green); border-radius: 50%; margin-left: auto; }
+        @media (max-width: 600px) {
+            .sidebar { position: absolute; top: var(--header-height); left: 0; bottom: 0; width: 100%; z-index: 50; }
+        }
     </style>
 </head>
 <body>
@@ -218,11 +216,21 @@
     <div class="main-container">
         <aside id="sidebar" class="sidebar">
             <div class="sidebar-header">
-                <div class="root-info">
-                    <div class="root-label">ROOT FOLDER</div>
-                    <div id="root-name" class="root-name">My Drive Todos</div>
+                <div class="sidebar-header-row">
+                    <div class="root-info">
+                        <div class="root-label">ROOT</div>
+                        <div id="root-name" class="root-name">My Drive Todos</div>
+                    </div>
+                    <div style="display:flex; gap:6px; align-items:center; flex-shrink:0;">
+                        <button id="new-file-btn" class="header-toggle" style="font-size:11px; padding:4px 8px;" aria-label="Create new todo file">+ NEW</button>
+                        <button id="refresh-btn" class="header-toggle" style="font-size:11px; padding:4px 8px; display:none;" aria-label="Refresh from Drive">REFRESH</button>
+                        <button id="change-root" class="header-toggle" style="font-size:11px; padding:4px 8px;">CHANGE</button>
+                    </div>
                 </div>
-                <button id="change-root" class="header-toggle" style="padding:3px 8px; font-size:11px; white-space:nowrap;">CHANGE</button>
+                <button id="connect-drive-btn" class="btn-google" style="width:100%; justify-content:center;">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+                    Connect Google Drive
+                </button>
             </div>
             
             <div style="padding:8px 12px 4px;">
@@ -231,15 +239,6 @@
             </div>
             
             <div id="file-list" class="file-list"></div>
-            
-            <div class="sidebar-footer">
-                <button id="connect-drive-btn" class="btn-google" style="width:100%; justify-content:center; margin-bottom:4px;">
-                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
-                    Connect Google Drive
-                </button>
-                <button id="new-file-btn" class="add-list" style="width:100%; font-size:12.5px; padding:8px 0;">+ NEW .TODO FILE</button>
-                <button id="refresh-btn" class="header-toggle" style="width:100%; font-size:11px; padding:6px 0; display:none;">⟳ Refresh from Drive</button>
-            </div>
         </aside>
         
         <div style="flex:1; display:flex; flex-direction:column; overflow:hidden; min-width:0;">
@@ -787,7 +786,6 @@ function renderFileList() {
         const driveBadge = file.isDrive ? '<span class="sync-dot" title="Synced with Drive"></span>' : '';
         
         div.innerHTML = `
-            <span class="file-icon">📄</span>
             <div style="flex:1; min-width:0; overflow:hidden;">
                 <div class="file-name">${name}</div>
                 <div class="file-meta">${meta}</div>
