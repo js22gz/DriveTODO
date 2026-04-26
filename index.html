@@ -970,35 +970,37 @@ function scheduleSave() {
         if (isProcessing) return;
         isProcessing = true;
         
-        const content = stringify();
-        
-        // Always update local cache
-        if (currentFilename && filesMap[currentFilename]) {
-            filesMap[currentFilename].content = content;
-            filesMap[currentFilename].modified = Date.now();
-            saveToStorage();
+        try {
+            const content = stringify();
+            
+            // Always update local cache
+            if (currentFilename && filesMap[currentFilename]) {
+                filesMap[currentFilename].content = content;
+                filesMap[currentFilename].modified = Date.now();
+                saveToStorage();
+            }
+            
+            // Real Drive save if connected
+            let savedToDrive = false;
+            if (isSignedIn && currentDriveFileId && gapiLoaded) {
+                savedToDrive = await saveToDrive();
+            }
+            
+            // Notify parent (Editor host)
+            parent.postMessage({
+                type: 'extension:updated',
+                content: content,
+                filename: currentFilename,
+                driveFileId: currentDriveFileId
+            }, '*');
+            
+            if (savedToDrive) {
+                // refresh list to show new modified time
+                setTimeout(renderFileList, 300);
+            }
+        } finally {
+            isProcessing = false;
         }
-        
-        // Real Drive save if connected
-        let savedToDrive = false;
-        if (isSignedIn && currentDriveFileId && gapiLoaded) {
-            savedToDrive = await saveToDrive();
-        }
-        
-        // Notify parent (Editor host)
-        parent.postMessage({
-            type: 'extension:updated',
-            content: content,
-            filename: currentFilename,
-            driveFileId: currentDriveFileId
-        }, '*');
-        
-        if (savedToDrive) {
-            // refresh list to show new modified time
-            setTimeout(renderFileList, 300);
-        }
-        
-        setTimeout(() => { isProcessing = false; }, 120);
     }, SAVE_DEBOUNCE);
 }
 
