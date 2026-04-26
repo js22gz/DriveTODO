@@ -293,6 +293,7 @@ let gisLoaded = false;
 let tokenClient = null;
 let isSignedIn = false;
 let accessToken = null;
+let tokenExpiresAt = 0; // ms timestamp when current access token expires
 let pickerApiLoaded = false;
 
 // ==================== UTILS ====================
@@ -481,10 +482,11 @@ async function handleAuthClick() {
                     resolve(response);
                 }
             };
-            tokenClient.requestAccessToken({ prompt: '' });
+            tokenClient.requestAccessToken({ prompt: 'consent' });
         });
 
         accessToken = tokenResponse.access_token;
+        tokenExpiresAt = Date.now() + ((tokenResponse.expires_in || 3600) - 60) * 1000;
         gapi.client.setToken({ access_token: accessToken });
 
         // Fetch the signed-in user's email via tokeninfo
@@ -533,6 +535,7 @@ async function signOut() {
         }
         gapi.client.setToken(null);
         accessToken = null;
+        tokenExpiresAt = 0;
         isSignedIn = false;
         currentDriveFileId = null;
         updateDriveStatus(false);
@@ -542,6 +545,26 @@ async function signOut() {
         renderFileList();
     } catch (e) {
         console.warn('Sign out error', e);
+    }
+}
+
+async function ensureFreshToken() {
+    if (!tokenClient || !gisLoaded) return;
+    // Refresh the token if it has expired or is about to expire (within 60 s buffer already applied at issue time)
+    if (Date.now() < tokenExpiresAt) return;
+    try {
+        const tokenResponse = await new Promise((resolve, reject) => {
+            tokenClient.callback = (response) => {
+                if (response.error) reject(response);
+                else resolve(response);
+            };
+            tokenClient.requestAccessToken({ prompt: '' });
+        });
+        accessToken = tokenResponse.access_token;
+        tokenExpiresAt = Date.now() + ((tokenResponse.expires_in || 3600) - 60) * 1000;
+        gapi.client.setToken({ access_token: accessToken });
+    } catch (err) {
+        console.warn('Silent token refresh failed', err);
     }
 }
 
@@ -628,6 +651,7 @@ async function openDriveFile(fileId, fileName) {
     }
     
     try {
+        await ensureFreshToken();
         const fetchResponse = await fetch(
             `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
             { headers: { 'Authorization': `Bearer ${accessToken}` } }
@@ -671,6 +695,7 @@ async function saveToDrive() {
     const content = stringify();
     
     try {
+        await ensureFreshToken();
         const boundary = '-------' + Math.random().toString(36).slice(2);
         const metadata = JSON.stringify({ name: currentFilename });
         const multipartBody =
@@ -945,35 +970,37 @@ function scheduleSave() {
         if (isProcessing) return;
         isProcessing = true;
         
-        const content = stringify();
-        
-        // Always update local cache
-        if (currentFilename && filesMap[currentFilename]) {
-            filesMap[currentFilename].content = content;
-            filesMap[currentFilename].modified = Date.now();
-            saveToStorage();
+        try {
+            const content = stringify();
+            
+            // Always update local cache
+            if (currentFilename && filesMap[currentFilename]) {
+                filesMap[currentFilename].content = content;
+                filesMap[currentFilename].modified = Date.now();
+                saveToStorage();
+            }
+            
+            // Real Drive save if connected
+            let savedToDrive = false;
+            if (isSignedIn && currentDriveFileId && gapiLoaded) {
+                savedToDrive = await saveToDrive();
+            }
+            
+            // Notify parent (Editor host)
+            parent.postMessage({
+                type: 'extension:updated',
+                content: content,
+                filename: currentFilename,
+                driveFileId: currentDriveFileId
+            }, '*');
+            
+            if (savedToDrive) {
+                // refresh list to show new modified time
+                setTimeout(renderFileList, 300);
+            }
+        } finally {
+            isProcessing = false;
         }
-        
-        // Real Drive save if connected
-        let savedToDrive = false;
-        if (isSignedIn && currentDriveFileId && gapiLoaded) {
-            savedToDrive = await saveToDrive();
-        }
-        
-        // Notify parent (Editor host)
-        parent.postMessage({
-            type: 'extension:updated',
-            content: content,
-            filename: currentFilename,
-            driveFileId: currentDriveFileId
-        }, '*');
-        
-        if (savedToDrive) {
-            // refresh list to show new modified time
-            setTimeout(renderFileList, 300);
-        }
-        
-        setTimeout(() => { isProcessing = false; }, 120);
     }, SAVE_DEBOUNCE);
 }
 
