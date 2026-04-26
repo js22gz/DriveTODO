@@ -431,7 +431,7 @@ async function loadGoogleAPIs() {
                 tokenClient = google.accounts.oauth2.initTokenClient({
                     client_id: GOOGLE_CLIENT_ID,
                     scope: SCOPES,
-                    callback: '', // set per request in handleAuthClick
+                    callback: () => {}, // overridden per request in handleAuthClick
                 });
                 gisLoaded = true;
                 resolve(true);
@@ -491,11 +491,12 @@ async function handleAuthClick() {
         let email = '';
         try {
             const resp = await fetch(
-                `https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=${encodeURIComponent(accessToken)}`
+                'https://www.googleapis.com/oauth2/v3/tokeninfo',
+                { headers: { 'Authorization': `Bearer ${accessToken}` } }
             );
             const info = await resp.json();
             email = info.email || '';
-        } catch (e) {}
+        } catch (e) { console.warn('Failed to fetch user email:', e); }
         
         updateDriveStatus(true, email);
         showToast('Connected to Google Drive!');
@@ -526,7 +527,9 @@ async function signOut() {
     if (!gisLoaded) return;
     try {
         if (accessToken) {
-            google.accounts.oauth2.revoke(accessToken, () => {});
+            google.accounts.oauth2.revoke(accessToken, (done) => {
+                if (done.error) console.warn('Token revocation failed:', done.error);
+            });
         }
         gapi.client.setToken(null);
         accessToken = null;
