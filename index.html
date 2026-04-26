@@ -266,6 +266,7 @@
 const GOOGLE_CLIENT_ID = '682862484302-4vd6mhkicoh3tb1f9p1hf0sl6aq6svbi.apps.googleusercontent.com';
 const GOOGLE_API_KEY = 'AIzaSyC0ZDjH9yt_RCbOqJvR2I--8hcZQvBEZHQ';
 const SCOPES = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.readonly';
+const TOKEN_REFRESH_TIMEOUT_MS = 30000;
 
 // ==================== ORIGINAL TODO LOGIC ====================
 const MIN_LIST_WIDTH = 250;
@@ -554,7 +555,9 @@ async function ensureFreshToken() {
     if (Date.now() < tokenExpiresAt) return;
     try {
         const tokenResponse = await new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => reject(new Error('Token refresh timed out')), TOKEN_REFRESH_TIMEOUT_MS);
             tokenClient.callback = (response) => {
+                clearTimeout(timeout);
                 if (response.error) reject(response);
                 else resolve(response);
             };
@@ -565,6 +568,10 @@ async function ensureFreshToken() {
         gapi.client.setToken({ access_token: accessToken });
     } catch (err) {
         console.warn('Silent token refresh failed', err);
+        accessToken = null;
+        tokenExpiresAt = 0;
+        updateDriveStatus(false);
+        throw err;
     }
 }
 
@@ -685,7 +692,7 @@ async function openDriveFile(fileId, fileName) {
         
     } catch (err) {
         console.error('Open file failed', err);
-        showToast('Failed to open file from Drive');
+        showToast(isSignedIn ? 'Failed to open file from Drive' : 'Session expired – please reconnect to Drive');
     }
 }
 
@@ -729,7 +736,7 @@ async function saveToDrive() {
         return true;
     } catch (err) {
         console.error('Save to Drive failed', err);
-        showToast('Auto-save to Drive failed');
+        showToast(isSignedIn ? 'Auto-save to Drive failed' : 'Session expired – please reconnect to Drive');
         return false;
     }
 }
