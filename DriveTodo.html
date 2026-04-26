@@ -263,17 +263,12 @@
 <script>
 'use strict';
 
-// ==================== CONFIG - REPLACE WITH YOUR OWN ====================
-// 1. Go to https://console.cloud.google.com/
-// 2. Create project → Enable "Google Drive API"
-// 3. Create OAuth 2.0 Client ID (Web application) → Add your domain to Authorized JavaScript origins
-// 4. Create API Key (for Picker)
-// 5. Paste below and reload
-const GOOGLE_CLIENT_ID = 'YOUR_CLIENT_ID_HERE.apps.googleusercontent.com';
-const GOOGLE_API_KEY = 'YOUR_API_KEY_HERE';
+// ==================== CONFIG ====================
+const GOOGLE_CLIENT_ID = '682862484302-4vd6mhkicoh3tb1f9p1hf0sl6aq6svbi.apps.googleusercontent.com';
+const GOOGLE_API_KEY = 'AIzaSyC0ZDjH9yt_RCbOqJvR2I--8hcZQvBEZHQ';
 const SCOPES = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.readonly';
 
-// ==================== ORIGINAL TODO LOGIC (UNCHANGED) ====================
+// ==================== ORIGINAL TODO LOGIC ====================
 const MIN_LIST_WIDTH = 250;
 const DEFAULT_LIST_WIDTH = 380;
 let data = [];
@@ -324,7 +319,7 @@ function formatTimestamp(ts) {
     return d.toLocaleDateString('en-US', options);
 }
 
-// ==================== TODO PARSER (UNCHANGED) ====================
+// ==================== TODO PARSER  ====================
 function parseContent(str = '') {
     data = [];
     if (!str.trim()) {
