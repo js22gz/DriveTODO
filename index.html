@@ -150,6 +150,8 @@
             display: flex; align-items: center; gap: 16px;
         }
         .empty { text-align: center; color: var(--text-dim); padding: 40px 20px; font-size: 13px; flex: 1; }
+        .drive-hint { padding: 18px 14px; color: var(--text-dim); font-size: 12px; line-height: 1.7; text-align: center; }
+        .drive-hint strong { color: var(--text-secondary); display: block; margin-bottom: 6px; font-size: 12.5px; }
         .modal {
             position: fixed; inset: 0; background: rgba(9,9,11,0.85); display: none;
             align-items: center; justify-content: center; z-index: 100;
@@ -218,12 +220,12 @@
             <div class="sidebar-header">
                 <div class="sidebar-header-row">
                     <div class="root-info">
-                        <div class="root-label">ROOT</div>
+                        <div class="root-label">WORKSPACE</div>
                         <div id="root-name" class="root-name">My Drive Todos</div>
                     </div>
                     <div style="display:flex; gap:6px; align-items:center; flex-shrink:0;">
                         <button id="new-file-btn" class="header-toggle" style="font-size:11px; padding:4px 8px;" aria-label="Create new todo file">+ NEW</button>
-                        <button id="refresh-btn" class="header-toggle" style="font-size:11px; padding:4px 8px; display:none;" aria-label="Refresh from Drive">REFRESH</button>
+                        <button id="open-file-btn" class="header-toggle" style="font-size:11px; padding:4px 8px; display:none;" aria-label="Open .todo file from Drive">OPEN</button>
                         <button id="change-root" class="header-toggle" style="font-size:11px; padding:4px 8px;">CHANGE</button>
                     </div>
                 </div>
@@ -265,7 +267,7 @@
 // ==================== CONFIG ====================
 const GOOGLE_CLIENT_ID = '682862484302-4vd6mhkicoh3tb1f9p1hf0sl6aq6svbi.apps.googleusercontent.com';
 const GOOGLE_API_KEY = 'AIzaSyC0ZDjH9yt_RCbOqJvR2I--8hcZQvBEZHQ';
-const SCOPES = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.readonly';
+const SCOPES = 'https://www.googleapis.com/auth/drive.file';
 const TOKEN_REFRESH_TIMEOUT_MS = 30000;
 
 // ==================== ORIGINAL TODO LOGIC ====================
@@ -449,19 +451,19 @@ async function loadGoogleAPIs() {
 function updateDriveStatus(connected, email = '') {
     const statusEl = document.getElementById('drive-status');
     const connectBtn = document.getElementById('connect-drive-btn');
-    const refreshBtn = document.getElementById('refresh-btn');
+    const openBtn = document.getElementById('open-file-btn');
     
     if (connected) {
         statusEl.className = 'drive-status connected';
         statusEl.innerHTML = `● Connected${email ? ' as ' + email.split('@')[0] : ''}`;
         connectBtn.style.display = 'none';
-        refreshBtn.style.display = 'block';
+        openBtn.style.display = 'block';
         isSignedIn = true;
     } else {
         statusEl.className = 'drive-status disconnected';
         statusEl.innerHTML = '● Not connected';
         connectBtn.style.display = 'flex';
-        refreshBtn.style.display = 'none';
+        openBtn.style.display = 'none';
         isSignedIn = false;
     }
 }
@@ -502,14 +504,10 @@ async function handleAuthClick() {
         } catch (e) { console.warn('Failed to fetch user email:', e); }
         
         updateDriveStatus(true, email);
-        showToast('Connected to Google Drive!');
+        showToast('Connected! Use OPEN to load .todo files from Drive.');
         
-        // Auto-load files from current root (or prompt for root if none)
-        if (rootFolder.id === 'root' || !rootFolder.id) {
-            await pickRootFolder();
-        } else {
-            await listDriveTodoFiles();
-        }
+        // Restore cached drive files from localStorage (if any) and refresh the list
+        renderFileList();
         
     } catch (err) {
         console.error('Auth failed', err);
@@ -597,8 +595,8 @@ async function pickRootFolder() {
                     document.getElementById('root-name').textContent = rootFolder.name;
                     safeStorage.setItem('drivetodo_root', JSON.stringify(rootFolder));
                     
-                    showToast(`Root folder set to "${folder.name}"`);
-                    listDriveTodoFiles();
+                    showToast(`Workspace folder set to "${folder.name}"`);
+                    renderFileList();
                     resolve(true);
                 } else if (data.action === google.picker.Action.CANCEL) {
                     resolve(false);
@@ -610,45 +608,38 @@ async function pickRootFolder() {
     });
 }
 
-async function listDriveTodoFiles() {
-    if (!isSignedIn || !gapiLoaded || rootFolder.id === 'root') {
-        renderFileList(); // fallback to local
+async function openFromDrivePicker() {
+    if (!isSignedIn) {
+        showToast('Please connect to Google Drive first');
         return;
     }
-    
-    const container = document.getElementById('file-list');
-    container.innerHTML = '<div style="padding:16px; text-align:center; color:var(--text-dim); font-size:12px;">Loading from Drive...</div>';
-    
-    try {
-        const response = await gapi.client.drive.files.list({
-            q: `'${rootFolder.id}' in parents and name contains '.todo' and trashed = false`,
-            fields: 'files(id, name, modifiedTime, size)',
-            orderBy: 'modifiedTime desc',
-            pageSize: 100
-        });
-        
-        filesMap = {};
-        (response.result.files || []).forEach(file => {
-            filesMap[file.name] = {
-                id: file.id,
-                name: file.name,
-                modified: new Date(file.modifiedTime).getTime(),
-                isDrive: true
-            };
-        });
-        
-        // Also keep any local-only files
-        const localOnly = Object.keys(filesMap).filter(k => !filesMap[k].isDrive);
-        // (in this version we prioritize Drive)
-        
-        renderFileList();
-        showToast(`${Object.keys(filesMap).length} .todo files loaded from Drive`);
-        
-    } catch (err) {
-        console.error('List files failed', err);
-        showToast('Failed to load files from Drive');
-        renderFileList();
+    if (!pickerApiLoaded) {
+        await loadGoogleAPIs();
     }
+
+    return new Promise((resolve) => {
+        const view = new google.picker.DocsView()
+            .setMimeTypes('text/plain,application/octet-stream')
+            .setQuery('.todo');
+
+        const picker = new google.picker.PickerBuilder()
+            .setAppId(GOOGLE_CLIENT_ID.split('.')[0])
+            .setOAuthToken(accessToken)
+            .addView(view)
+            .setTitle('Select a .todo file to open')
+            .setCallback(async (pickerData) => {
+                if (pickerData.action === google.picker.Action.PICKED) {
+                    const file = pickerData.docs[0];
+                    await openDriveFile(file.id, file.name);
+                    resolve(true);
+                } else if (pickerData.action === google.picker.Action.CANCEL) {
+                    resolve(false);
+                }
+            })
+            .build();
+
+        picker.setVisible(true);
+    });
 }
 
 async function openDriveFile(fileId, fileName) {
@@ -675,6 +666,16 @@ async function openDriveFile(fileId, fileName) {
         currentDriveFileId = fileId;
         filename = fileName;
         
+        // Register in filesMap as a "recently opened via Drive" entry
+        filesMap[fileName] = {
+            id: fileId,
+            name: fileName,
+            content: content,
+            modified: Date.now(),
+            isDrive: true
+        };
+        saveToStorage();
+        
         parseContent(content);
         
         const displayName = fileName.replace(/\.todo$/i, '');
@@ -683,7 +684,7 @@ async function openDriveFile(fileId, fileName) {
         render();
         renderFileList();
         
-        showToast(`Opened ${fileName} from Drive`);
+        showToast(`Opened ${fileName} – edits will sync to Drive`);
         
         // Notify parent editor
         try {
@@ -733,7 +734,7 @@ async function saveToDrive() {
 
 async function createNewDriveFile(name) {
     if (!isSignedIn || !gapiLoaded || rootFolder.id === 'root') {
-        showToast('Please connect to Drive and set a root folder first');
+        showToast('Please set a workspace folder first (click CHANGE to pick one)');
         return;
     }
     
@@ -756,6 +757,7 @@ async function createNewDriveFile(name) {
         filesMap[name] = {
             id: newFile.id,
             name: name,
+            content: '',
             modified: new Date(newFile.modifiedTime).getTime(),
             isDrive: true
         };
@@ -763,12 +765,13 @@ async function createNewDriveFile(name) {
         currentFilename = name;
         currentDriveFileId = newFile.id;
         parseContent('');
+        saveToStorage();
         
         document.getElementById('header-title').textContent = name.replace(/\.todo$/i, '');
         render();
         renderFileList();
         
-        showToast(`Created ${name} in Drive`);
+        showToast(`Created ${name} in Drive – edits will sync`);
         
     } catch (err) {
         console.error('Create file failed', err);
@@ -899,6 +902,16 @@ function renderFileList() {
         empty.style.cssText = 'padding:24px 12px; text-align:center; color:var(--text-dim); font-size:12px;';
         empty.textContent = 'No files match';
         container.appendChild(empty);
+    } else if (!hasVisible && isSignedIn) {
+        const hint = document.createElement('div');
+        hint.className = 'drive-hint';
+        hint.innerHTML = `<strong>No Drive files yet</strong> Click <strong>OPEN</strong> to open an existing .todo file, or <strong>+ NEW</strong> to create one in your workspace.`;
+        container.appendChild(hint);
+    } else if (!hasVisible && !isSignedIn) {
+        const hint = document.createElement('div');
+        hint.className = 'drive-hint';
+        hint.innerHTML = `<strong>No files yet</strong> Connect Google Drive to sync, or click <strong>+ NEW</strong> to create a local file.`;
+        container.appendChild(hint);
     }
 }
 
@@ -1365,7 +1378,7 @@ document.getElementById('change-root').addEventListener('click', async () => {
     if (isSignedIn) {
         await pickRootFolder();
     } else {
-        const newName = prompt('Root folder name (or connect to Drive for real folder):', rootFolder.name);
+        const newName = prompt('Workspace folder name (connect to Drive to pick a real folder):', rootFolder.name);
         if (newName) {
             rootFolder.name = newName.trim();
             updateRootDisplay();
@@ -1376,7 +1389,7 @@ document.getElementById('change-root').addEventListener('click', async () => {
 
 document.getElementById('new-file-btn').addEventListener('click', createNewFile);
 
-document.getElementById('refresh-btn').addEventListener('click', listDriveTodoFiles);
+document.getElementById('open-file-btn').addEventListener('click', openFromDrivePicker);
 
 const searchInput = document.getElementById('file-search');
 searchInput.addEventListener('input', () => {
@@ -1461,7 +1474,7 @@ async function boot() {
     // Show helpful first-time message
     if (!safeStorage.getItem('drivetodo_welcome_shown')) {
         setTimeout(() => {
-            showToast('Tip: Click "Connect Google Drive" to sync your .todo files!');
+            showToast('Connect Drive → click OPEN to load your .todo files safely.');
             safeStorage.setItem('drivetodo_welcome_shown', 'true');
         }, 2500);
     }
