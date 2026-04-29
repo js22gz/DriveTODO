@@ -905,12 +905,12 @@ function renderFileList() {
     } else if (!hasVisible && isSignedIn) {
         const hint = document.createElement('div');
         hint.className = 'drive-hint';
-        hint.innerHTML = `<strong>No Drive files yet</strong>Click <strong>OPEN</strong> to open an existing .todo file, or <strong>+ NEW</strong> to create one in your workspace.`;
+        hint.innerHTML = `<strong>No Drive files yet</strong> Click <strong>OPEN</strong> to open an existing .todo file, or <strong>+ NEW</strong> to create one in your workspace.`;
         container.appendChild(hint);
     } else if (!hasVisible && !isSignedIn) {
         const hint = document.createElement('div');
         hint.className = 'drive-hint';
-        hint.innerHTML = `<strong>No files yet</strong>Connect Google Drive to sync, or click <strong>+ NEW</strong> to create a local file.`;
+        hint.innerHTML = `<strong>No files yet</strong> Connect Google Drive to sync, or click <strong>+ NEW</strong> to create a local file.`;
         container.appendChild(hint);
     }
 }
